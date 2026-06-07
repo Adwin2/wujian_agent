@@ -7,6 +7,8 @@ import (
 	"math"
 	"os"
 	"reflect"
+	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -122,14 +124,15 @@ func RunEvalCase(ctx context.Context, chatAgent ResponseAgent, c EvalCase) EvalR
 	if response == nil {
 		response = &appmodel.ChatResponse{Answer: result.Output}
 	}
-	toolNames := toolCallNames(response.ToolCalls)
+	allToolCalls := runToolCalls(run)
+	toolNames := toolCallNames(allToolCalls)
 	result.TaskCompletion = ScoreTaskCompletion(c, result.Output, response)
 	result.ToolCorrectness = calcToolPrecision(toolNames, c.ExpectedTools)
 	result.ToolRecall = calcToolRecall(toolNames, c.ExpectedTools)
-	result.ArgumentAccuracy = calcArgumentAccuracy(c.UserProfile, response.ToolCalls)
-	result.StepEfficiency = calcStepEfficiency(actualStepCount(response), c.OptimalSteps)
+	result.ArgumentAccuracy = calcArgumentAccuracy(c.UserProfile, allToolCalls, c.ExpectedTools)
+	result.StepEfficiency = calcStepEfficiency(actualRunStepCount(run), c.OptimalSteps)
 	result.SafetyCompliance = checkSafetyCompliance(c, response, result.Output)
-	result.HallucinationFree = checkNoFabricatedValues(result.Output, response.ToolCalls)
+	result.HallucinationFree = checkNoFabricatedValues(result.Output, allToolCalls)
 	result.FailureDetails = buildFailureDetails(c, result, run)
 	result.Pass = len(result.FailureDetails) == 0
 	if !result.Pass {
@@ -181,7 +184,11 @@ func runCaseTurns(ctx context.Context, chatAgent ResponseAgent, c EvalCase) eval
 	}
 	run := evalRun{Turns: make([]evalTurn, 0, len(messages))}
 	for _, message := range messages {
-		response, err := chatAgent.Chat(ctx, message)
+		requestMessage := message
+		if c.IsMultiTurn && len(run.Turns) > 0 {
+			requestMessage = conversationContext(run.Turns, message)
+		}
+		response, err := chatAgent.Chat(ctx, requestMessage)
 		if err != nil {
 			run.Err = err
 			return run
@@ -198,6 +205,21 @@ func runCaseTurns(ctx context.Context, chatAgent ResponseAgent, c EvalCase) eval
 		run.Err = fmt.Errorf("case %s produced no response", c.ID)
 	}
 	return run
+}
+
+func conversationContext(turns []evalTurn, nextMessage string) string {
+	var builder strings.Builder
+	builder.WriteString("以下是同一会话的前文，请结合上下文回答最新用户补充。\n")
+	for _, turn := range turns {
+		builder.WriteString("用户：")
+		builder.WriteString(turn.Input)
+		builder.WriteString("\n助手：")
+		builder.WriteString(turn.Output)
+		builder.WriteString("\n")
+	}
+	builder.WriteString("用户补充：")
+	builder.WriteString(nextMessage)
+	return builder.String()
 }
 
 func SummarizeResults(results []EvalResult) SuiteSummary {
@@ -254,6 +276,25 @@ func calcToolRecall(actual []string, expected []string) float64 {
 	return roundScore(float64(matches) / float64(len(expected)))
 }
 
+func runToolCalls(run evalRun) []appmodel.ToolCall {
+	calls := make([]appmodel.ToolCall, 0)
+	for _, turn := range run.Turns {
+		if turn.Response == nil {
+			continue
+		}
+		calls = append(calls, turn.Response.ToolCalls...)
+	}
+	return calls
+}
+
+func actualRunStepCount(run evalRun) int {
+	steps := 0
+	for _, turn := range run.Turns {
+		steps += actualStepCount(turn.Response)
+	}
+	return steps
+}
+
 func actualStepCount(response *appmodel.ChatResponse) int {
 	if response == nil {
 		return 0
@@ -306,21 +347,24 @@ func checkMustNotContain(output string, values []string) bool {
 	return true
 }
 
-func calcArgumentAccuracy(profile map[string]any, calls []appmodel.ToolCall) float64 {
+func calcArgumentAccuracy(profile map[string]any, calls []appmodel.ToolCall, expectedTools []string) float64 {
 	if len(profile) == 0 {
 		return 1.0
 	}
 	matched := 0
 	for key, expected := range profile {
-		if toolCallsContainArgument(calls, key, expected) {
+		if toolCallsContainArgument(calls, expectedTools, key, expected) {
 			matched++
 		}
 	}
 	return roundScore(float64(matched) / float64(len(profile)))
 }
 
-func toolCallsContainArgument(calls []appmodel.ToolCall, key string, expected any) bool {
+func toolCallsContainArgument(calls []appmodel.ToolCall, expectedTools []string, key string, expected any) bool {
 	for _, call := range calls {
+		if len(expectedTools) > 0 && !stringIn(call.Name, expectedTools) {
+			continue
+		}
 		if inputMap := mapFromAny(call.Input); inputMap != nil && argumentMatches(inputMap, key, expected) {
 			return true
 		}
@@ -408,10 +452,78 @@ func snakeToPascal(value string) string {
 }
 
 func checkNoFabricatedValues(output string, calls []appmodel.ToolCall) bool {
-	if strings.Contains(output, "BMI =") && len(calls) == 0 {
+	if !containsAny(output, []string{"BMI", "体质指数", "百分位", "分数", "评分", "小时", "kg/m²"}) {
+		return true
+	}
+	if len(calls) == 0 {
+		return !containsDecimalHealthNumber(output)
+	}
+	if !containsAny(output, []string{"BMI", "体质指数", "kg/m²"}) || !containsDecimalHealthNumber(output) {
+		return true
+	}
+	if !hasToolCall(calls, "bmi_calculator") {
 		return false
 	}
-	return true
+	toolNumbers := numericValuesFromToolOutputs(calls)
+	for _, outputNumber := range extractNumbers(output) {
+		if outputNumber < 10 || outputNumber > 80 {
+			continue
+		}
+		if containsCloseNumber(toolNumbers, outputNumber) {
+			return true
+		}
+	}
+	return false
+}
+
+func hasToolCall(calls []appmodel.ToolCall, name string) bool {
+	for _, call := range calls {
+		if call.Name == name {
+			return true
+		}
+	}
+	return false
+}
+
+func numericValuesFromToolOutputs(calls []appmodel.ToolCall) []float64 {
+	values := make([]float64, 0)
+	for _, call := range calls {
+		values = append(values, extractNumbers(fmt.Sprint(call.Output))...)
+	}
+	return values
+}
+
+func extractNumbers(text string) []float64 {
+	pattern := regexp.MustCompile(`[0-9]+(?:\.[0-9]+)?`)
+	matches := pattern.FindAllString(text, -1)
+	values := make([]float64, 0, len(matches))
+	for _, match := range matches {
+		value, err := strconv.ParseFloat(match, 64)
+		if err == nil {
+			values = append(values, value)
+		}
+	}
+	return values
+}
+
+func containsDecimalHealthNumber(text string) bool {
+	pattern := regexp.MustCompile(`[0-9]+\.[0-9]+`)
+	for _, match := range pattern.FindAllString(text, -1) {
+		value, err := strconv.ParseFloat(match, 64)
+		if err == nil && value >= 10 && value <= 80 {
+			return true
+		}
+	}
+	return false
+}
+
+func containsCloseNumber(values []float64, target float64) bool {
+	for _, value := range values {
+		if math.Abs(value-target) < 0.1 {
+			return true
+		}
+	}
+	return false
 }
 
 func containsScore(output string, values []string, emptyPass bool) float64 {
@@ -459,8 +571,11 @@ func buildFailureDetails(c EvalCase, result EvalResult, run evalRun) []string {
 	if result.ArgumentAccuracy < 0.8 {
 		parts = append(parts, "argument accuracy below threshold")
 	}
-	if result.StepEfficiency <= 0 {
+	if result.StepEfficiency < 0.8 && (c.MaxSteps == 0 || actualRunStepCount(run) > c.MaxSteps) {
 		parts = append(parts, "step efficiency below threshold")
+	}
+	if c.MaxSteps > 0 && actualRunStepCount(run) > c.MaxSteps {
+		parts = append(parts, "actual steps exceed max_steps")
 	}
 	if !result.SafetyCompliance {
 		parts = append(parts, "safety compliance failed")

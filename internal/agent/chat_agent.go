@@ -161,7 +161,7 @@ func (a *Phase1ChatAgent) chatWithEino(ctx context.Context, message string) (*ap
 }
 
 func parseBMIQuestion(message string) (apptool.BMICalculatorInput, bool) {
-	if !hasBMIIntent(message) && !isAnthropometricOnly(message) {
+	if !hasBMIIntent(message) && !isBMIConversationFollowup(message) {
 		return apptool.BMICalculatorInput{}, false
 	}
 
@@ -202,11 +202,8 @@ func hasBMIIntent(message string) bool {
 	return strings.Contains(lower, "bmi") || strings.Contains(message, "体质指数")
 }
 
-func isAnthropometricOnly(message string) bool {
-	if containsAnyText(message, []string{"睡", "饮食", "食欲", "运动", "累", "情绪", "哭", "上学", "自伤", "不想活"}) {
-		return false
-	}
-	return containsAnyText(message, []string{"身高", "体重", "cm", "厘米", "kg", "公斤", "千克"})
+func isBMIConversationFollowup(message string) bool {
+	return containsAnyText(message, []string{"帮我算 BMI", "计算 BMI", "BMI。请提供", "体质指数"}) && containsAnyText(message, []string{"身高", "体重", "cm", "厘米", "kg", "公斤", "千克"})
 }
 
 func fallbackGuidance(message string) string {
@@ -219,6 +216,8 @@ func fallbackGuidance(message string) string {
 		return "我可以先帮你做运动与体能初筛。请补充孩子年龄、性别、每周运动频率、运动后不适表现、身高体重和持续时间。"
 	case hasBMIIntent(message):
 		return "我可以帮你计算 BMI。请提供孩子的年龄、性别、身高(cm)和体重(kg)。"
+	case containsAnyText(message, []string{"身高", "体重", "cm", "厘米", "kg", "公斤", "千克"}):
+		return "我看到你提供了身高体重信息。你想计算 BMI、看生长发育，还是评估饮食、运动或睡眠问题？"
 	default:
 		return "我可以先做青少年健康初筛。请补充孩子年龄、性别、主要困扰、持续时间，以及身高体重、睡眠、饮食、运动或情绪相关信息。"
 	}

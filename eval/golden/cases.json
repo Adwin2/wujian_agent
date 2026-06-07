@@ -40,7 +40,8 @@
     "optimal_steps": 2,
     "is_multi_turn": true,
     "expected_ask_for": ["年龄", "性别", "身高", "体重"],
-    "followup_inputs": ["我女儿14岁158cm62kg"],
+    "followup_inputs": ["补充一下：我女儿14岁158cm62kg"],
+    "max_steps": 3,
     "tags": ["multi-turn", "info-gathering"]
   },
   {

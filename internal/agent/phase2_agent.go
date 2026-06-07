@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync"
 
+	appgraph "github.com/adwin2/youthvital/internal/graph"
 	appmodel "github.com/adwin2/youthvital/internal/model"
 	apptool "github.com/adwin2/youthvital/internal/tool"
 	"github.com/cloudwego/eino/adk"
@@ -87,13 +88,48 @@ func (a *Phase2ChatAgent) ChatWithOptions(ctx context.Context, message string, o
 		return nil, errors.New("message is required")
 	}
 	if decision := evaluateGuardrail(message); decision.Blocked {
-		response := &appmodel.ChatResponse{Answer: decision.Message, HITLTriggered: true}
+		response := &appmodel.ChatResponse{Answer: decision.Message, SafetyBlocked: true}
 		return response, a.persistAssessment(ctx, options, message, response)
+	}
+	if response, blocked, err := a.screenBeforeChat(ctx, message); err != nil || blocked {
+		if response != nil {
+			return response, a.persistAssessment(ctx, options, message, response)
+		}
+		return nil, err
 	}
 	if a.runner == nil {
 		return NewPhase1ChatAgent(a.tools).Chat(ctx, message)
 	}
 	return a.chatWithSupervisor(ctx, message, options)
+}
+
+func (a *Phase2ChatAgent) screenBeforeChat(ctx context.Context, message string) (*appmodel.ChatResponse, bool, error) {
+	if a.tools == nil || a.tools.IntakePipeline == nil || a.tools.ScreeningPipeline == nil {
+		return nil, false, nil
+	}
+	intakeOutput, err := a.tools.IntakePipeline.Run(ctx, appgraph.IntakeInput{Message: message})
+	if err != nil {
+		return nil, false, err
+	}
+	if len(intakeOutput.RiskHints) == 0 {
+		return nil, false, nil
+	}
+	screeningOutput, err := a.tools.ScreeningPipeline.Run(ctx, appgraph.ScreeningInput{Intake: intakeOutput})
+	if err != nil {
+		return nil, false, err
+	}
+	if !screeningOutput.RequireHumanReview {
+		return nil, false, nil
+	}
+	return &appmodel.ChatResponse{
+		Answer:           hitlMessage,
+		HITLTriggered:    true,
+		ScreeningBlocked: true,
+		ToolCalls: []appmodel.ToolCall{
+			{Name: "intake_pipeline", Input: appgraph.IntakeInput{Message: message}, Output: intakeOutput},
+			{Name: "screening_pipeline", Input: appgraph.ScreeningInput{Intake: intakeOutput}, Output: screeningOutput},
+		},
+	}, true, nil
 }
 
 func (a *Phase2ChatAgent) chatWithSupervisor(ctx context.Context, message string, options ChatOptions) (*appmodel.ChatResponse, error) {
@@ -285,7 +321,8 @@ func (a *Phase2ChatAgent) persistAssessment(ctx context.Context, options ChatOpt
 	}); err != nil {
 		return err
 	}
-	return a.persistAuditLogs(ctx, userID, response.ToolCalls)
+	_ = a.persistAuditLogs(ctx, userID, response.ToolCalls)
+	return nil
 }
 
 func traceRiskFlags(toolCalls []appmodel.ToolCall) []any {

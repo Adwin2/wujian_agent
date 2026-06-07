@@ -47,12 +47,20 @@ func (t *IntakePipelineTool) Info(_ context.Context) (*schema.ToolInfo, error) {
 	}, nil
 }
 
+func (t *IntakePipelineTool) Run(ctx context.Context, input IntakeInput) (*IntakeOutput, error) {
+	output, err := t.runnable.Invoke(ctx, &input)
+	if err != nil {
+		return nil, err
+	}
+	return output, nil
+}
+
 func (t *IntakePipelineTool) InvokableRun(ctx context.Context, argumentsInJSON string, _ ...einotool.Option) (string, error) {
 	var input IntakeInput
 	if err := json.Unmarshal([]byte(argumentsInJSON), &input); err != nil {
 		return "", fmt.Errorf("decode %s arguments: %w", intakePipelineToolName, err)
 	}
-	output, err := t.runnable.Invoke(ctx, &input)
+	output, err := t.Run(ctx, input)
 	if err != nil {
 		return "", err
 	}
@@ -88,12 +96,20 @@ func (t *ScreeningPipelineTool) Info(_ context.Context) (*schema.ToolInfo, error
 	}, nil
 }
 
+func (t *ScreeningPipelineTool) Run(ctx context.Context, input ScreeningInput) (*ScreeningOutput, error) {
+	output, err := t.runnable.Invoke(ctx, &input)
+	if err != nil {
+		return nil, err
+	}
+	return output, nil
+}
+
 func (t *ScreeningPipelineTool) InvokableRun(ctx context.Context, argumentsInJSON string, _ ...einotool.Option) (string, error) {
 	var input ScreeningInput
 	if err := json.Unmarshal([]byte(argumentsInJSON), &input); err != nil {
 		return "", fmt.Errorf("decode %s arguments: %w", screeningPipelineToolName, err)
 	}
-	output, err := t.runnable.Invoke(ctx, &input)
+	output, err := t.Run(ctx, input)
 	if err != nil {
 		return "", err
 	}

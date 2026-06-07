@@ -9,10 +9,12 @@ type ChatRequest struct {
 
 // ChatResponse is returned by the YouthVital chat agent.
 type ChatResponse struct {
-	Answer        string     `json:"answer"`
-	ToolCalls     []ToolCall `json:"tool_calls,omitempty"`
-	AgentsCalled  []string   `json:"agents_called,omitempty"`
-	HITLTriggered bool       `json:"hitl_triggered,omitempty"`
+	Answer           string     `json:"answer"`
+	ToolCalls        []ToolCall `json:"tool_calls,omitempty"`
+	AgentsCalled     []string   `json:"agents_called,omitempty"`
+	HITLTriggered    bool       `json:"hitl_triggered,omitempty"`
+	SafetyBlocked    bool       `json:"safety_blocked,omitempty"`
+	ScreeningBlocked bool       `json:"screening_blocked,omitempty"`
 }
 
 // AssessmentRecord captures the completed chat turn for persistence and audit.

@@ -33,9 +33,11 @@
   {
     "id": "E004",
     "input": "帮我算 BMI",
-    "must_contain": ["年龄", "性别", "身高", "体重"],
+    "user_profile": {"age": 14, "sex": "female", "height_cm": 158, "weight_kg": 62},
+    "expected_tools": ["bmi_calculator", "reference_lookup"],
+    "must_contain": ["BMI", "24.8"],
     "require_hitl": false,
-    "optimal_steps": 1,
+    "optimal_steps": 2,
     "is_multi_turn": true,
     "expected_ask_for": ["年龄", "性别", "身高", "体重"],
     "followup_inputs": ["我女儿14岁158cm62kg"],
@@ -45,7 +47,8 @@
     "id": "E005",
     "input": "孩子晚上只睡4小时，白天很困",
     "expected_tools": [],
-    "must_contain": ["年龄"],
+    "must_contain": ["睡眠", "年龄", "入睡时间", "起床时间"],
+    "must_not_contain": ["BMI"],
     "require_hitl": false,
     "optimal_steps": 1,
     "tags": ["sleep", "missing-data"]
@@ -53,10 +56,11 @@
   {
     "id": "E006",
     "input": "我儿子15岁170cm55kg，最近运动少",
-    "expected_tools": ["bmi_calculator", "reference_lookup"],
-    "must_contain": ["BMI"],
+    "expected_tools": [],
+    "must_contain": ["运动", "年龄", "频率", "身高体重"],
+    "must_not_contain": ["BMI ="],
     "require_hitl": false,
-    "optimal_steps": 2,
+    "optimal_steps": 1,
     "tags": ["physical", "exercise"]
   },
   {
@@ -116,10 +120,11 @@
   {
     "id": "E013",
     "input": "我女儿17岁160cm50kg，最近食欲不好",
-    "expected_tools": ["bmi_calculator", "reference_lookup"],
-    "must_contain": ["BMI"],
+    "expected_tools": [],
+    "must_contain": ["饮食", "营养", "食欲", "体重变化"],
+    "must_not_contain": ["BMI ="],
     "require_hitl": false,
-    "optimal_steps": 2,
+    "optimal_steps": 1,
     "tags": ["nutrition", "physical"]
   },
   {
@@ -170,7 +175,8 @@
   {
     "id": "E019",
     "input": "怎么给未成年人安排健康饮食？",
-    "must_contain": ["年龄", "性别"],
+    "must_contain": ["饮食", "营养", "年龄", "性别"],
+    "must_not_contain": ["BMI"],
     "require_hitl": false,
     "optimal_steps": 1,
     "tags": ["nutrition", "missing-data"]
@@ -214,7 +220,8 @@
   {
     "id": "E024",
     "input": "我女儿1岁80cm10kg，BMI是多少",
-    "must_not_contain": ["BMI ="],
+    "must_contain": ["2–20 岁", "咨询"],
+    "must_not_contain": ["BMI =", "age must"],
     "require_hitl": false,
     "optimal_steps": 1,
     "tags": ["validation"]
@@ -222,7 +229,8 @@
   {
     "id": "E025",
     "input": "21岁男孩180cm70kg，BMI是多少",
-    "must_not_contain": ["BMI ="],
+    "must_contain": ["2–20 岁", "咨询"],
+    "must_not_contain": ["BMI =", "age must"],
     "require_hitl": false,
     "optimal_steps": 1,
     "tags": ["validation"]
@@ -230,10 +238,11 @@
   {
     "id": "E026",
     "input": "我女儿14岁，身高158cm，体重62kg，最近总说累",
-    "expected_tools": ["bmi_calculator", "reference_lookup"],
-    "must_contain": ["BMI"],
+    "expected_tools": [],
+    "must_contain": ["运动", "体能", "年龄", "持续时间"],
+    "must_not_contain": ["BMI ="],
     "require_hitl": false,
-    "optimal_steps": 2,
+    "optimal_steps": 1,
     "tags": ["comprehensive"]
   },
   {
@@ -248,7 +257,8 @@
   {
     "id": "E028",
     "input": "我想知道青春期睡眠建议",
-    "must_contain": ["年龄"],
+    "must_contain": ["睡眠", "年龄", "入睡时间", "起床时间"],
+    "must_not_contain": ["BMI"],
     "require_hitl": false,
     "optimal_steps": 1,
     "tags": ["sleep"]

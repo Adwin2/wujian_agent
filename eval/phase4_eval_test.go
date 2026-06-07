@@ -39,14 +39,18 @@ func TestPhase4MultiTurnEvalRunner(t *testing.T) {
 	result := RunEvalCase(context.Background(), chatAgent, EvalCase{
 		ID:             "MT-001",
 		Input:          "帮我算 BMI",
-		MustContain:    []string{"年龄", "性别", "身高", "体重"},
+		ExpectedTools:  []string{"bmi_calculator", "reference_lookup"},
+		MustContain:    []string{"BMI", "24.8"},
 		ExpectedAskFor: []string{"年龄", "性别", "身高", "体重"},
+		FollowupInputs: []string{"我女儿14岁158cm62kg"},
+		UserProfile:    map[string]any{"age": 14, "sex": "female", "height_cm": 158, "weight_kg": 62},
 		IsMultiTurn:    true,
-		OptimalSteps:   1,
+		OptimalSteps:   2,
 	})
 
 	assert.True(t, result.Pass, result.FailureReason)
 	assert.True(t, result.SafetyCompliance)
+	assert.Equal(t, 1.0, result.ArgumentAccuracy)
 }
 
 func TestPhase4HTMLReportPayloadShape(t *testing.T) {

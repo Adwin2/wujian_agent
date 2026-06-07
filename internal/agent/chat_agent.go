@@ -90,15 +90,13 @@ func (a *Phase1ChatAgent) Chat(ctx context.Context, message string) (*appmodel.C
 		return a.chatWithEino(ctx, message)
 	}
 
-	return &appmodel.ChatResponse{
-		Answer: "我可以先帮你计算 BMI。请提供孩子的年龄、性别、身高(cm)和体重(kg)。如果需要生长曲线百分位，Phase 1 还需要接入权威参考表后才能给出。",
-	}, nil
+	return &appmodel.ChatResponse{Answer: fallbackGuidance(message)}, nil
 }
 
 func (a *Phase1ChatAgent) answerBMI(ctx context.Context, input apptool.BMICalculatorInput) (*appmodel.ChatResponse, error) {
 	bmiOutput, err := a.tools.BMI.Calculate(ctx, input)
 	if err != nil {
-		return nil, err
+		return &appmodel.ChatResponse{Answer: friendlyBMIValidationMessage(err)}, nil
 	}
 
 	refOutput, err := a.tools.ReferenceLookup.Lookup(ctx, apptool.ReferenceLookupInput{Topic: "bmi_interpretation_limitations"})
@@ -163,6 +161,10 @@ func (a *Phase1ChatAgent) chatWithEino(ctx context.Context, message string) (*ap
 }
 
 func parseBMIQuestion(message string) (apptool.BMICalculatorInput, bool) {
+	if !hasBMIIntent(message) && !isAnthropometricOnly(message) {
+		return apptool.BMICalculatorInput{}, false
+	}
+
 	age, ok := extractNumberBeforeAny(message, []string{"岁", "周岁"})
 	if !ok {
 		return apptool.BMICalculatorInput{}, false
@@ -193,6 +195,58 @@ func parseBMIQuestion(message string) (apptool.BMICalculatorInput, bool) {
 		HeightCM: height,
 		WeightKG: weight,
 	}, true
+}
+
+func hasBMIIntent(message string) bool {
+	lower := strings.ToLower(message)
+	return strings.Contains(lower, "bmi") || strings.Contains(message, "体质指数")
+}
+
+func isAnthropometricOnly(message string) bool {
+	if containsAnyText(message, []string{"睡", "饮食", "食欲", "运动", "累", "情绪", "哭", "上学", "自伤", "不想活"}) {
+		return false
+	}
+	return containsAnyText(message, []string{"身高", "体重", "cm", "厘米", "kg", "公斤", "千克"})
+}
+
+func fallbackGuidance(message string) string {
+	switch {
+	case containsAnyText(message, []string{"睡", "困", "熬夜"}):
+		return "我可以先帮你做睡眠健康初筛。请补充孩子年龄、通常入睡时间、起床时间、白天困倦程度，以及这种情况持续了多久。"
+	case containsAnyText(message, []string{"饮食", "食欲", "吃饭", "营养"}):
+		return "我可以先帮你做饮食营养初筛。请补充孩子年龄、性别、身高体重、近期饮食变化、食欲和体重变化情况。"
+	case containsAnyText(message, []string{"运动", "锻炼", "累"}):
+		return "我可以先帮你做运动与体能初筛。请补充孩子年龄、性别、每周运动频率、运动后不适表现、身高体重和持续时间。"
+	case hasBMIIntent(message):
+		return "我可以帮你计算 BMI。请提供孩子的年龄、性别、身高(cm)和体重(kg)。"
+	default:
+		return "我可以先做青少年健康初筛。请补充孩子年龄、性别、主要困扰、持续时间，以及身高体重、睡眠、饮食、运动或情绪相关信息。"
+	}
+}
+
+func friendlyBMIValidationMessage(err error) string {
+	message := err.Error()
+	switch {
+	case strings.Contains(message, "age must be between"):
+		return "目前 BMI 工具仅支持 2–20 岁青少年范围；这个年龄建议直接咨询儿保或成人医疗专业人员，并结合医生建议解读身高体重。"
+	case strings.Contains(message, "height"):
+		return "身高数据看起来不在可计算范围内，请确认单位是厘米(cm)，并重新提供年龄、性别、身高和体重。"
+	case strings.Contains(message, "weight"):
+		return "体重数据看起来不在可计算范围内，请确认单位是公斤(kg)，并重新提供年龄、性别、身高和体重。"
+	case strings.Contains(message, "sex"):
+		return "计算儿童青少年 BMI 需要年龄、性别、身高(cm)和体重(kg)，请补充孩子性别后再计算。"
+	default:
+		return "暂时无法完成 BMI 计算，请确认年龄、性别、身高(cm)和体重(kg)是否完整且单位正确。"
+	}
+}
+
+func containsAnyText(text string, values []string) bool {
+	for _, value := range values {
+		if strings.Contains(text, value) {
+			return true
+		}
+	}
+	return false
 }
 
 func extractNumberBeforeAny(text string, units []string) (float64, bool) {

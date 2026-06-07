@@ -19,7 +19,7 @@ import (
 	"github.com/cloudwego/eino/schema"
 )
 
-const hitlMessage = "⚠️ 检测到需要专业人员审查的健康风险，已转交人工审核。"
+const hitlMessage = "⚠️ 检测到需要专业人员审查的健康风险，已转交人工审核。若孩子存在正在发生的自伤/轻生风险，请立即陪伴孩子、移除危险物品，并联系监护人、学校心理老师或拨打当地急救/危机干预热线获取即时帮助。"
 
 type phase2TraceKey struct{}
 

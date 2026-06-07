@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"sort"
 	"strings"
 	"sync"
@@ -321,7 +322,9 @@ func (a *Phase2ChatAgent) persistAssessment(ctx context.Context, options ChatOpt
 	}); err != nil {
 		return err
 	}
-	_ = a.persistAuditLogs(ctx, userID, response.ToolCalls)
+	if err := a.persistAuditLogs(ctx, userID, response.ToolCalls); err != nil {
+		slog.ErrorContext(ctx, "persist PHI audit logs", "error", err, "user_id", userID, "tool_calls", len(response.ToolCalls))
+	}
 	return nil
 }
 

@@ -27,6 +27,17 @@ type AssessmentRecord struct {
 	HITLTriggered bool
 }
 
+// AuditLogRecord captures PHI-related tool access for compliance review.
+type AuditLogRecord struct {
+	UserID       string
+	Action       string
+	ResourceType string
+	ResourceID   string
+	ToolName     string
+	ToolInput    any
+	ToolOutput   any
+}
+
 // ErrorResponse keeps API error responses stable for clients and tests.
 type ErrorResponse struct {
 	Error APIError `json:"error"`

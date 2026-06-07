@@ -54,6 +54,12 @@ func NewSupervisorRunner(ctx context.Context, chatModel model.ToolCallingChatMod
 		adk.NewAgentTool(ctx, reportAgent),
 		tools.RiskFlagger,
 	}
+	if tools.IntakePipeline != nil {
+		supervisorTools = append(supervisorTools, tools.IntakePipeline)
+	}
+	if tools.ScreeningPipeline != nil {
+		supervisorTools = append(supervisorTools, tools.ScreeningPipeline)
+	}
 
 	supervisor, err := adk.NewChatModelAgent(ctx, &adk.ChatModelAgentConfig{
 		Name:        "supervisor",
@@ -64,7 +70,7 @@ func NewSupervisorRunner(ctx context.Context, chatModel model.ToolCallingChatMod
 			ToolsNodeConfig: compose.ToolsNodeConfig{
 				Tools:               supervisorTools,
 				ExecuteSequentially: true,
-				ToolCallMiddlewares: []compose.ToolMiddleware{captureToolCallsMiddleware()},
+				ToolCallMiddlewares: []compose.ToolMiddleware{guardrailToolMiddleware(), captureToolCallsMiddleware()},
 			},
 			EmitInternalEvents: true,
 		},
@@ -87,7 +93,7 @@ func newSpecialistAgent(ctx context.Context, chatModel model.ToolCallingChatMode
 			ToolsNodeConfig: compose.ToolsNodeConfig{
 				Tools:               tools,
 				ExecuteSequentially: true,
-				ToolCallMiddlewares: []compose.ToolMiddleware{captureToolCallsMiddleware()},
+				ToolCallMiddlewares: []compose.ToolMiddleware{guardrailToolMiddleware(), captureToolCallsMiddleware()},
 			},
 		},
 		MaxIterations: maxIterations,

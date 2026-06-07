@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	appgraph "github.com/adwin2/youthvital/internal/graph"
 	einotool "github.com/cloudwego/eino/components/tool"
 )
 
@@ -21,6 +22,8 @@ type Registry struct {
 	ReportGenerator    *ReportGenerator
 	AlertSender        *AlertSender
 	AppointmentBooker  *AppointmentBooker
+	IntakePipeline     *appgraph.IntakePipelineTool
+	ScreeningPipeline  *appgraph.ScreeningPipelineTool
 }
 
 // NewRegistry constructs all YouthVital tools.
@@ -41,9 +44,27 @@ func NewRegistry() *Registry {
 	}
 }
 
+// WithGraphTools compiles and attaches deterministic Phase 3 graph tools.
+func (r *Registry) WithGraphTools(ctx context.Context) (*Registry, error) {
+	if r == nil {
+		return nil, fmt.Errorf("tool registry is required")
+	}
+	intakeTool, err := appgraph.NewIntakePipelineTool(ctx)
+	if err != nil {
+		return nil, err
+	}
+	screeningTool, err := appgraph.NewScreeningPipelineTool(ctx)
+	if err != nil {
+		return nil, err
+	}
+	r.IntakePipeline = intakeTool
+	r.ScreeningPipeline = screeningTool
+	return r, nil
+}
+
 // EinoTools exposes every deterministic tool for Eino ADK tool registration.
 func (r *Registry) EinoTools() []einotool.BaseTool {
-	return []einotool.BaseTool{
+	tools := []einotool.BaseTool{
 		r.BMI,
 		r.GrowthCurve,
 		r.ReferenceLookup,
@@ -57,6 +78,13 @@ func (r *Registry) EinoTools() []einotool.BaseTool {
 		r.AlertSender,
 		r.AppointmentBooker,
 	}
+	if r.IntakePipeline != nil {
+		tools = append(tools, r.IntakePipeline)
+	}
+	if r.ScreeningPipeline != nil {
+		tools = append(tools, r.ScreeningPipeline)
+	}
+	return tools
 }
 
 // PhysicalTools are used by the physical_health agent.
@@ -104,7 +132,7 @@ func (r *Registry) Invoke(ctx context.Context, name string, argumentsInJSON stri
 }
 
 func (r *Registry) invokableTools() []einotool.InvokableTool {
-	return []einotool.InvokableTool{
+	tools := []einotool.InvokableTool{
 		r.BMI,
 		r.GrowthCurve,
 		r.ReferenceLookup,
@@ -118,4 +146,11 @@ func (r *Registry) invokableTools() []einotool.InvokableTool {
 		r.AlertSender,
 		r.AppointmentBooker,
 	}
+	if r.IntakePipeline != nil {
+		tools = append(tools, r.IntakePipeline)
+	}
+	if r.ScreeningPipeline != nil {
+		tools = append(tools, r.ScreeningPipeline)
+	}
+	return tools
 }

@@ -28,8 +28,11 @@ func main() {
 	}
 	defer db.Close()
 
-	tools := tool.NewRegistry()
-	chatAgent := agent.NewPhase2ChatAgent(tools).WithAssessmentStore(db)
+	tools, err := tool.NewRegistry().WithGraphTools(ctx)
+	if err != nil {
+		log.Fatalf("create graph tools: %v", err)
+	}
+	chatAgent := agent.NewPhase2ChatAgent(tools).WithAssessmentStore(db).WithAuditStore(db)
 	if cfg.LLM.APIKey != "" {
 		temperature := cfg.LLM.Temperature
 		maxTokens := cfg.LLM.MaxTokens
@@ -47,7 +50,7 @@ func main() {
 		if err != nil {
 			log.Fatalf("create supervisor chat agent: %v", err)
 		}
-		chatAgent.WithAssessmentStore(db)
+		chatAgent.WithAssessmentStore(db).WithAuditStore(db)
 	}
 
 	h := server.Default(server.WithHostPorts(cfg.Server.Address()))

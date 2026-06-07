@@ -26,6 +26,11 @@ type AssessmentStore interface {
 	SaveAssessment(ctx context.Context, record appmodel.AssessmentRecord) error
 }
 
+// AuditStore persists PHI-related tool access records.
+type AuditStore interface {
+	SaveAuditLog(ctx context.Context, record appmodel.AuditLogRecord) error
+}
+
 type phase2Trace struct {
 	mu            sync.Mutex
 	toolCalls     []appmodel.ToolCall
@@ -37,9 +42,10 @@ type phase2Trace struct {
 
 // Phase2ChatAgent executes the supervisor multi-agent graph when configured.
 type Phase2ChatAgent struct {
-	tools  *apptool.Registry
-	store  AssessmentStore
-	runner *adk.Runner
+	tools      *apptool.Registry
+	store      AssessmentStore
+	auditStore AuditStore
+	runner     *adk.Runner
 }
 
 // NewPhase2ChatAgent creates a Phase 2 agent shell. It needs an Eino runner for
@@ -51,6 +57,12 @@ func NewPhase2ChatAgent(tools *apptool.Registry) *Phase2ChatAgent {
 // WithAssessmentStore wires persistence for completed assessments and risk flags.
 func (a *Phase2ChatAgent) WithAssessmentStore(store AssessmentStore) *Phase2ChatAgent {
 	a.store = store
+	return a
+}
+
+// WithAuditStore wires PHI access audit logging.
+func (a *Phase2ChatAgent) WithAuditStore(store AuditStore) *Phase2ChatAgent {
+	a.auditStore = store
 	return a
 }
 
@@ -73,6 +85,10 @@ func (a *Phase2ChatAgent) ChatWithOptions(ctx context.Context, message string, o
 	message = strings.TrimSpace(message)
 	if message == "" {
 		return nil, errors.New("message is required")
+	}
+	if decision := evaluateGuardrail(message); decision.Blocked {
+		response := &appmodel.ChatResponse{Answer: decision.Message, HITLTriggered: true}
+		return response, a.persistAssessment(ctx, options, message, response)
 	}
 	if a.runner == nil {
 		return NewPhase1ChatAgent(a.tools).Chat(ctx, message)
@@ -256,8 +272,9 @@ func (a *Phase2ChatAgent) persistAssessment(ctx context.Context, options ChatOpt
 	if a.store == nil || response == nil {
 		return nil
 	}
-	return a.store.SaveAssessment(ctx, appmodel.AssessmentRecord{
-		UserID:        strings.TrimSpace(options.UserID),
+	userID := strings.TrimSpace(options.UserID)
+	if err := a.store.SaveAssessment(ctx, appmodel.AssessmentRecord{
+		UserID:        userID,
 		SessionID:     strings.TrimSpace(options.SessionID),
 		InputText:     input,
 		OutputText:    response.Answer,
@@ -265,7 +282,10 @@ func (a *Phase2ChatAgent) persistAssessment(ctx context.Context, options ChatOpt
 		ToolCalls:     response.ToolCalls,
 		RiskFlags:     traceRiskFlags(response.ToolCalls),
 		HITLTriggered: response.HITLTriggered,
-	})
+	}); err != nil {
+		return err
+	}
+	return a.persistAuditLogs(ctx, userID, response.ToolCalls)
 }
 
 func traceRiskFlags(toolCalls []appmodel.ToolCall) []any {
@@ -276,6 +296,37 @@ func traceRiskFlags(toolCalls []appmodel.ToolCall) []any {
 		}
 	}
 	return riskFlags
+}
+
+func (a *Phase2ChatAgent) persistAuditLogs(ctx context.Context, userID string, toolCalls []appmodel.ToolCall) error {
+	if a.auditStore == nil {
+		return nil
+	}
+	for _, call := range toolCalls {
+		if !isPHITool(call.Name) {
+			continue
+		}
+		if err := a.auditStore.SaveAuditLog(ctx, appmodel.AuditLogRecord{
+			UserID:       userID,
+			Action:       "tool_access",
+			ResourceType: "phi",
+			ToolName:     call.Name,
+			ToolInput:    call.Input,
+			ToolOutput:   call.Output,
+		}); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func isPHITool(name string) bool {
+	switch name {
+	case "bmi_calculator", "growth_curve", "sleep_scorer", "phq_scorer", "exercise_calculator", "risk_flagger", "history_query", "report_generator", "intake_pipeline", "screening_pipeline":
+		return true
+	default:
+		return false
+	}
 }
 
 func captureToolCallsMiddleware() compose.ToolMiddleware {

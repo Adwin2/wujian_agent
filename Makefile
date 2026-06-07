@@ -1,18 +1,22 @@
-.PHONY: tidy fmt test run docker-up docker-down migrate
+.PHONY: tidy fmt test test-real-judge run docker-up docker-down migrate
 
+GO ?= env -u GOROOT /opt/homebrew/bin/go
 DATABASE_URL ?= postgres://postgres:postgres@localhost:5432/youthvital?sslmode=disable
 
 tidy:
-	go mod tidy
+	$(GO) mod tidy
 
 fmt:
-	go fmt ./...
+	$(GO) fmt ./...
 
 test:
-	go test ./...
+	$(GO) test ./...
+
+test-real-judge:
+	PHASE4_REAL_JUDGE=1 $(GO) test ./eval -run TestArkJudgeIntegration -count=1 -timeout=90s -v
 
 run:
-	go run ./cmd/server
+	$(GO) run ./cmd/server
 
 docker-up:
 	docker compose -f deploy/docker-compose.yml up -d

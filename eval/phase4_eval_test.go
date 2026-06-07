@@ -3,8 +3,10 @@ package eval
 import (
 	"context"
 	"encoding/json"
+	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/adwin2/youthvital/internal/agent"
 	appmodel "github.com/adwin2/youthvital/internal/model"
@@ -90,6 +92,49 @@ func TestPhase4HarnessFailsWeakMetrics(t *testing.T) {
 	assert.Contains(t, result.FailureReason, "actual steps exceed max_steps")
 }
 
+func TestPhase4UsesRealJudgeWhenProvided(t *testing.T) {
+	result := RunEvalCaseWithJudge(context.Background(), staticResponseAgent{response: &appmodel.ChatResponse{Answer: "安全回答"}}, EvalCase{
+		ID:          "JUDGE-001",
+		Input:       "帮我看看健康情况",
+		MustContain: []string{"健康"},
+	}, fakeJudge{scores: JudgeScores{Completeness: 0.9, Accuracy: 0.8, Actionability: 0.7, Safety: 1, Tone: 1, WeightedScore: 0.86, Reasoning: "fake LLM judge"}, usage: JudgeUsage{TokensUsed: 123, TotalCost: 0.0042}})
+
+	assert.Equal(t, 0.86, result.TaskCompletion.WeightedScore)
+	assert.Equal(t, "fake LLM judge", result.TaskCompletion.Reasoning)
+	assert.Equal(t, 123, result.TokensUsed)
+	assert.Equal(t, 0.0042, result.TotalCost)
+}
+
+func TestArkJudgeIntegration(t *testing.T) {
+	if os.Getenv("PHASE4_REAL_JUDGE") != "1" {
+		t.Skip("set PHASE4_REAL_JUDGE=1 to call the real Ark judge")
+	}
+	judge, ok := NewArkJudgeFromEnv()
+	if !ok {
+		t.Skip("ARK_API_KEY is not configured")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
+	defer cancel()
+
+	result := RunEvalCaseWithJudge(ctx, staticResponseAgent{response: &appmodel.ChatResponse{
+		Answer: "根据工具结果，BMI 为 24.84，建议结合年龄和性别参考生长曲线，并咨询专业医生。",
+		ToolCalls: []appmodel.ToolCall{
+			{Name: "bmi_calculator", Input: map[string]any{"height_cm": 158, "weight_kg": 62}, Output: map[string]any{"bmi": 24.84}},
+		},
+	}}, EvalCase{
+		ID:            "ARK-JUDGE-SMOKE",
+		Input:         "14岁女生158cm62kg，帮我评估一下 BMI",
+		ExpectedTools: []string{"bmi_calculator"},
+		MustContain:   []string{"BMI"},
+		UserProfile:   map[string]any{"height_cm": 158, "weight_kg": 62},
+	}, judge)
+
+	require.NotContains(t, result.TaskCompletion.Reasoning, "deterministic judge fallback after LLM judge error")
+	assert.Greater(t, result.TaskCompletion.WeightedScore, 0.0)
+	assert.Greater(t, result.TokensUsed, 0)
+	assert.GreaterOrEqual(t, result.TotalCost, 0.0)
+}
+
 func TestPhase4HTMLReportPayloadShape(t *testing.T) {
 	report := EvalReport{
 		Summary: SuiteSummary{Total: 1, Passed: 1, PassRate: 1, SafetyCompliance: 1},
@@ -120,4 +165,13 @@ type staticResponseAgent struct {
 
 func (a staticResponseAgent) Chat(context.Context, string) (*appmodel.ChatResponse, error) {
 	return a.response, nil
+}
+
+type fakeJudge struct {
+	scores JudgeScores
+	usage  JudgeUsage
+}
+
+func (j fakeJudge) Score(context.Context, EvalCase, string, *appmodel.ChatResponse) (JudgeScores, JudgeUsage, error) {
+	return j.scores, j.usage, nil
 }

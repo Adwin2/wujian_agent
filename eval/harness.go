@@ -105,15 +105,25 @@ func LoadGoldenCases(path string) ([]EvalCase, error) {
 
 // RunEvalSuite runs all golden cases and returns a structured report.
 func RunEvalSuite(ctx context.Context, chatAgent ResponseAgent, cases []EvalCase) EvalReport {
+	return RunEvalSuiteWithJudge(ctx, chatAgent, cases, nil)
+}
+
+// RunEvalSuiteWithJudge runs all golden cases and scores task completion with a real judge when configured.
+func RunEvalSuiteWithJudge(ctx context.Context, chatAgent ResponseAgent, cases []EvalCase, judge Judge) EvalReport {
 	results := make([]EvalResult, 0, len(cases))
 	for _, c := range cases {
-		results = append(results, RunEvalCase(ctx, chatAgent, c))
+		results = append(results, RunEvalCaseWithJudge(ctx, chatAgent, c, judge))
 	}
 	return EvalReport{GeneratedAt: time.Now().UTC(), Summary: SummarizeResults(results), Results: results}
 }
 
 // RunEvalCase executes one case, including multi-turn follow-ups.
 func RunEvalCase(ctx context.Context, chatAgent ResponseAgent, c EvalCase) EvalResult {
+	return RunEvalCaseWithJudge(ctx, chatAgent, c, nil)
+}
+
+// RunEvalCaseWithJudge executes one case and optionally delegates task-completion scoring to an LLM judge.
+func RunEvalCaseWithJudge(ctx context.Context, chatAgent ResponseAgent, c EvalCase, judge Judge) EvalResult {
 	start := time.Now()
 	run := runCaseTurns(ctx, chatAgent, c)
 	result := EvalResult{CaseID: c.ID, Tags: c.Tags, Output: run.Output, LatencyMs: time.Since(start).Milliseconds()}
@@ -126,7 +136,7 @@ func RunEvalCase(ctx context.Context, chatAgent ResponseAgent, c EvalCase) EvalR
 	}
 	allToolCalls := runToolCalls(run)
 	toolNames := toolCallNames(allToolCalls)
-	result.TaskCompletion = ScoreTaskCompletion(c, result.Output, response)
+	result.TaskCompletion, result.TokensUsed, result.TotalCost = scoreTaskCompletion(ctx, judge, c, result.Output, response)
 	result.ToolCorrectness = calcToolPrecision(toolNames, c.ExpectedTools)
 	result.ToolRecall = calcToolRecall(toolNames, c.ExpectedTools)
 	result.ArgumentAccuracy = calcArgumentAccuracy(c.UserProfile, allToolCalls, c.ExpectedTools)
@@ -139,6 +149,19 @@ func RunEvalCase(ctx context.Context, chatAgent ResponseAgent, c EvalCase) EvalR
 		result.FailureReason = strings.Join(result.FailureDetails, "; ")
 	}
 	return result
+}
+
+func scoreTaskCompletion(ctx context.Context, judge Judge, c EvalCase, output string, response *appmodel.ChatResponse) (JudgeScores, int, float64) {
+	fallback := ScoreTaskCompletion(c, output, response)
+	if judge == nil {
+		return fallback, 0, 0
+	}
+	scores, usage, err := judge.Score(ctx, c, output, response)
+	if err != nil {
+		fallback.Reasoning = "deterministic judge fallback after LLM judge error: " + err.Error()
+		return fallback, usage.TokensUsed, usage.TotalCost
+	}
+	return scores, usage.TokensUsed, usage.TotalCost
 }
 
 // ScoreTaskCompletion is the deterministic fallback for LLM-as-a-Judge scoring.

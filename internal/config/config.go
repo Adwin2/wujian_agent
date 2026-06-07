@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"os"
 	"strings"
 
 	"github.com/joho/godotenv"
@@ -57,11 +58,13 @@ type LLMConfig struct {
 	JudgeMaxTokens   int
 }
 
-// Load reads local .env values, the user's Eino reference env if present, and
-// environment variables with safe defaults. Secret values are loaded but never logged.
+// Load reads local .env values and environment variables with safe defaults.
+// Secret values are loaded but never logged.
 func Load() (*Config, error) {
 	_ = godotenv.Load()
-	_ = godotenv.Load("/Users/ryanmendez/gitContrib/ryan_Mall/eino-minimal/.env")
+	if envFile := strings.TrimSpace(os.Getenv("LLM_ENV_FILE")); envFile != "" {
+		_ = godotenv.Load(envFile)
+	}
 
 	v := viper.New()
 	v.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))

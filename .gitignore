@@ -1,0 +1,23 @@
+# Binaries
+bin/
+*.exe
+*.test
+*.out
+
+# Local env
+.env
+.env.*
+!.env.example
+
+# IDE / OS
+.DS_Store
+.idea/
+.vscode/
+
+# Logs and coverage
+*.log
+coverage.out
+
+# Local data
+.tmp/
+tmp/

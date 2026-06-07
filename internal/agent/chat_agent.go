@@ -163,10 +163,6 @@ func (a *Phase1ChatAgent) chatWithEino(ctx context.Context, message string) (*ap
 }
 
 func parseBMIQuestion(message string) (apptool.BMICalculatorInput, bool) {
-	if !strings.Contains(strings.ToLower(message), "bmi") && !strings.Contains(message, "体质指数") {
-		return apptool.BMICalculatorInput{}, false
-	}
-
 	age, ok := extractNumberBeforeAny(message, []string{"岁", "周岁"})
 	if !ok {
 		return apptool.BMICalculatorInput{}, false

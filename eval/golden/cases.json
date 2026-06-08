@@ -67,11 +67,12 @@
   {
     "id": "E007",
     "input": "我女儿13岁150cm45kg",
-    "expected_tools": ["bmi_calculator", "reference_lookup"],
-    "must_contain": ["BMI"],
+    "expected_tools": [],
+    "must_contain": ["身高体重", "计算 BMI", "生长发育"],
+    "must_not_contain": ["BMI ="],
     "require_hitl": false,
-    "optimal_steps": 2,
-    "tags": ["physical"]
+    "optimal_steps": 1,
+    "tags": ["physical", "intent-clarification"]
   },
   {
     "id": "E008",
@@ -267,11 +268,12 @@
   {
     "id": "E029",
     "input": "我女儿14岁158cm62kg",
-    "expected_tools": ["bmi_calculator", "reference_lookup"],
-    "must_contain": ["BMI"],
+    "expected_tools": [],
+    "must_contain": ["身高体重", "计算 BMI", "生长发育"],
+    "must_not_contain": ["BMI ="],
     "require_hitl": false,
-    "optimal_steps": 2,
-    "tags": ["physical"]
+    "optimal_steps": 1,
+    "tags": ["physical", "intent-clarification"]
   },
   {
     "id": "E030",

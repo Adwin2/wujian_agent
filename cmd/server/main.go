@@ -3,6 +3,8 @@ package main
 import (
 	"context"
 	"log"
+	"log/slog"
+	"os"
 
 	"github.com/cloudwego/eino-ext/components/model/openai"
 	"github.com/cloudwego/hertz/pkg/app/server"
@@ -10,12 +12,27 @@ import (
 	"github.com/adwin2/youthvital/api/handler"
 	"github.com/adwin2/youthvital/internal/agent"
 	"github.com/adwin2/youthvital/internal/config"
+	"github.com/adwin2/youthvital/internal/observability/otelsetup"
 	"github.com/adwin2/youthvital/internal/repository"
 	"github.com/adwin2/youthvital/internal/tool"
 )
 
 func main() {
 	ctx := context.Background()
+
+	// Setup structured logging
+	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo})))
+
+	// Setup OpenTelemetry
+	shutdown, err := otelsetup.Setup(ctx, "youthvital", "1.0.0")
+	if err != nil {
+		log.Fatalf("setup OpenTelemetry: %v", err)
+	}
+	defer func() {
+		if err := shutdown(ctx); err != nil {
+			slog.Error("shutdown OpenTelemetry", "error", err)
+		}
+	}()
 
 	cfg, err := config.Load()
 	if err != nil {
@@ -54,16 +71,19 @@ func main() {
 	}
 
 	h := server.Default(server.WithHostPorts(cfg.Server.Address()))
+
+	// Health endpoints
 	healthHandler := handler.NewHealthHandler(nil)
 	if db != nil {
 		healthHandler = handler.NewHealthHandler(db)
 	}
 	healthHandler.Register(h)
 
+	// API routes
 	v1 := h.Group("/v1")
 	chatHandler := handler.NewChatHandler(chatAgent)
 	chatHandler.Register(v1)
 
-	log.Printf("YouthVital Phase 2 server listening on %s", cfg.Server.Address())
+	slog.Info("YouthVital server started", "address", cfg.Server.Address())
 	h.Spin()
 }

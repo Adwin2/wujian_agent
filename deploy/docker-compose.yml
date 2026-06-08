@@ -1,4 +1,29 @@
 services:
+  app:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    container_name: youthvital-app
+    ports:
+      - "8080:8080"
+    environment:
+      - APP_ENV=production
+      - SERVER_HOST=0.0.0.0
+      - SERVER_PORT=8080
+      - DATABASE_URL=postgres://postgres:postgres@postgres:5432/youthvital?sslmode=disable
+      - REDIS_URL=redis:6379
+      - OTEL_ENABLED=${OTEL_ENABLED:-false}
+      - OTEL_EXPORTER_OTLP_ENDPOINT=${OTEL_EXPORTER_OTLP_ENDPOINT:-}
+      - ARK_API_KEY=${ARK_API_KEY:-}
+      - ARK_BASE_URL=${ARK_BASE_URL:-https://ark.cn-beijing.volces.com/api/v3}
+      - LLM_MODEL=${LLM_MODEL:-deepseek-v4-pro-260425}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
   postgres:
     image: pgvector/pgvector:pg16
     container_name: youthvital-postgres
@@ -10,6 +35,7 @@ services:
       - "5432:5432"
     volumes:
       - youthvital-postgres-data:/var/lib/postgresql/data
+      - ../migrations/001_init.sql:/docker-entrypoint-initdb.d/001_init.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres -d youthvital"]
       interval: 10s
@@ -23,12 +49,41 @@ services:
       - "6379:6379"
     volumes:
       - youthvital-redis-data:/data
+    command: redis-server --appendonly yes
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
       timeout: 5s
       retries: 5
 
+  # Optional: OpenTelemetry Collector for production tracing
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:latest
+    container_name: youthvital-otel
+    command: ["--config=/etc/otelcol/config.yaml"]
+    volumes:
+      - ./otel-config.yaml:/etc/otelcol/config.yaml:ro
+    ports:
+      - "4317:4317"   # OTLP gRPC
+      - "4318:4318"   # OTLP HTTP
+    profiles:
+      - observability
+
+  # Optional: Prometheus for metrics
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: youthvital-prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - youthvital-prometheus-data:/prometheus
+    ports:
+      - "9090:9090"
+    profiles:
+      - observability
+
 volumes:
   youthvital-postgres-data:
   youthvital-redis-data:
+  youthvital-prometheus-data:

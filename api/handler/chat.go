@@ -3,6 +3,7 @@ package handler
 import (
 	"context"
 	"strings"
+	"time"
 
 	"github.com/cloudwego/hertz/pkg/app"
 	"github.com/cloudwego/hertz/pkg/protocol/consts"
@@ -10,6 +11,7 @@ import (
 
 	"github.com/adwin2/youthvital/internal/agent"
 	"github.com/adwin2/youthvital/internal/model"
+	"github.com/adwin2/youthvital/internal/observability/metrics"
 )
 
 // ChatHandler adapts the Phase 1 chat agent to Hertz.
@@ -29,6 +31,7 @@ func (h *ChatHandler) Register(group *route.RouterGroup) {
 
 // Chat handles POST /v1/chat.
 func (h *ChatHandler) Chat(ctx context.Context, c *app.RequestContext) {
+	start := time.Now()
 	var req model.ChatRequest
 	if err := c.BindJSON(&req); err != nil {
 		writeError(c, consts.StatusBadRequest, "invalid_json", "request body must be valid JSON")
@@ -49,10 +52,12 @@ func (h *ChatHandler) Chat(ctx context.Context, c *app.RequestContext) {
 		resp, err = h.agent.Chat(ctx, req.Message)
 	}
 	if err != nil {
+		metrics.RecordChat(ctx, time.Since(start), "error", false, false)
 		writeError(c, consts.StatusBadRequest, "chat_error", err.Error())
 		return
 	}
 
+	metrics.RecordChat(ctx, time.Since(start), "success", resp.HITLTriggered, resp.SafetyBlocked)
 	c.JSON(consts.StatusOK, resp)
 }
 

@@ -12,6 +12,7 @@ import (
 	"github.com/adwin2/youthvital/api/handler"
 	"github.com/adwin2/youthvital/internal/agent"
 	"github.com/adwin2/youthvital/internal/config"
+	"github.com/adwin2/youthvital/internal/observability/middleware"
 	"github.com/adwin2/youthvital/internal/observability/otelsetup"
 	"github.com/adwin2/youthvital/internal/repository"
 	"github.com/adwin2/youthvital/internal/tool"
@@ -71,6 +72,7 @@ func main() {
 	}
 
 	h := server.Default(server.WithHostPorts(cfg.Server.Address()))
+	h.Use(middleware.ObservabilityMiddleware())
 
 	// Health endpoints
 	healthHandler := handler.NewHealthHandler(nil)
@@ -78,11 +80,13 @@ func main() {
 		healthHandler = handler.NewHealthHandler(db)
 	}
 	healthHandler.Register(h)
+	handler.NewMetricsHandler(nil).Register(h)
 
 	// API routes
 	v1 := h.Group("/v1")
 	chatHandler := handler.NewChatHandler(chatAgent)
 	chatHandler.Register(v1)
+	handler.NewChatStreamHandler(chatAgent).Register(v1)
 
 	slog.Info("YouthVital server started", "address", cfg.Server.Address())
 	h.Spin()

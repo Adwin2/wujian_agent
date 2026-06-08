@@ -16,10 +16,10 @@ var tracer = otel.Tracer("github.com/adwin2/youthvital")
 type ContextKey string
 
 const (
-	SessionIDKey  ContextKey = "session_id"
-	UserIDKey     ContextKey = "user_id"
-	TraceIDKey    ContextKey = "trace_id"
-	SpanIDKey     ContextKey = "span_id"
+	SessionIDKey ContextKey = "session_id"
+	UserIDKey    ContextKey = "user_id"
+	TraceIDKey   ContextKey = "trace_id"
+	SpanIDKey    ContextKey = "span_id"
 )
 
 // StartSpan creates a new span from context and returns a child context with the span.

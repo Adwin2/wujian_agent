@@ -37,3 +37,30 @@ func TestChatHandlerRunsPhase3ScreeningBeforeResponse(t *testing.T) {
 	assert.Equal(t, "intake_pipeline", payload.ToolCalls[0].Name)
 	assert.Equal(t, "screening_pipeline", payload.ToolCalls[1].Name)
 }
+
+func TestChatStreamHandlerEmitsSSEEvents(t *testing.T) {
+	chatAgent := agent.NewPhase2ChatAgent(tool.NewRegistry())
+	h := server.Default()
+	v1 := h.Group("/v1")
+	NewChatStreamHandler(chatAgent).Register(v1)
+
+	body := bytes.NewBufferString(`{"message":"帮我算 BMI"}`)
+	w := ut.PerformRequest(h.Engine, consts.MethodPost, "/v1/chat/stream", &ut.Body{Body: body, Len: body.Len()}, ut.Header{Key: "Content-Type", Value: "application/json"})
+	resp := w.Result()
+
+	require.Equal(t, consts.StatusOK, resp.StatusCode())
+	assert.Contains(t, string(resp.Header.ContentType()), "text/event-stream")
+	assert.Contains(t, string(resp.Body()), "data:")
+	assert.Contains(t, string(resp.Body()), "年龄")
+}
+
+func TestMetricsHandlerExposesPrometheusText(t *testing.T) {
+	h := server.Default()
+	NewMetricsHandler(nil).Register(h)
+
+	w := ut.PerformRequest(h.Engine, consts.MethodGet, "/metrics", nil)
+	resp := w.Result()
+
+	require.Equal(t, consts.StatusOK, resp.StatusCode())
+	assert.Contains(t, string(resp.Body()), "# HELP")
+}
